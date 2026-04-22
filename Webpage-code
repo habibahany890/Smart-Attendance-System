@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام الحضور FCI</title>
+    <style>
+        body { background: #e0e5ec; font-family: sans-serif; text-align: center; padding: 15px; direction: rtl; }
+        .card { background: #e0e5ec; padding: 25px; border-radius: 30px; box-shadow: 20px 20px 60px #bebebe, -20px -20px 60px #ffffff; max-width: 550px; margin: auto; }
+        select, button, input, textarea { width: 100%; padding: 12px; margin: 8px 0; border-radius: 15px; border: none; box-shadow: inset 4px 4px 8px #b8b9be, inset -4px -4px 8px #ffffff; background: #e0e5ec; outline: none; box-sizing: border-box; font-size: 15px; }
+        button { background: #6d5dfc !important; color: white !important; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:active { transform: scale(0.98); }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; margin-top: 10px; }
+        th, td { padding: 8px; border: 1px solid #ddd; font-size: 13px; }
+        th { background: #6d5dfc; color: white; }
+        .del-btn { background: #f44336 !important; width: 30px !important; height: 30px; padding: 0; margin: 0; border-radius: 8px; font-size: 12px; display: inline-block; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div id="login-page" style="display: none;">
+        <h2>🔐 دخول آمن</h2>
+        <input type="password" id="admin-pass" placeholder="كلمة المرور">
+        <button onclick="checkPassword()">دخول</button>
+        <button onclick="location.href='/'" style="background:#888 !important;">إلغاء</button>
+    </div>
+
+    <div id="reg-page" style="display: none;">
+        <h2>🪪 تسجيل الحضور</h2>
+        <p id="stat">مرر الكارت لبدء الربط أو التسجيل</p>
+        <h3 id="uid-val" style="color:#6d5dfc"></h3>
+        <div id="setup-ui" style="display: none;">
+            <select id="lvl" onchange="getNames()"><option value="">المستوى</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select>
+            <input type="text" id="srch" onkeyup="filterNames()" placeholder="🔍 ابحث عن اسم...">
+            <select id="n-list" size="5"></select>
+            <button onclick="saveBinding()">حفظ الربط ✅</button>
+        </div>
+        <hr style="margin:20px 0; opacity:0.3">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <button onclick="location.href='/admin'" style="background:#444 !important;">📊 السجل</button>
+            <button onclick="location.href='/mapping'" style="background:#2196F3 !important;">🔗 الروابط</button>
+            <button onclick="location.href='/students'" style="background:#009688 !important; grid-column: span 2;">👥 إدارة الأسماء</button>
+        </div>
+    </div>
+
+    <div id="admin-page" style="display: none;">
+        <h2>📊 سجل الحضور اليومي</h2>
+        <div id="table-area" style="max-height: 250px; overflow-y: auto;"></div>
+        <div style="display: flex; gap: 10px; margin-top: 10px;">
+            <button onclick="location.href='/downloadAtt'" style="background:#4CAF50 !important;">تحميل</button>
+            <button onclick="if(confirm('تصفير السجل بالكامل؟')) location.href='/clearAtt'" style="background:#f44336 !important;">تصفير</button>
+        </div>
+        <button onclick="location.href='/'" style="background:#888 !important; margin-top:15px;">رجوع</button>
+    </div>
+
+    <div id="students-page" style="display: none;">
+        <h2>👥 تعديل قوائم الطلاب</h2>
+        <select id="edit-lvl-select" onchange="loadLevelToEdit()">
+            <option value="">اختر المستوى لتعديل طلابه</option>
+            <option value="1">مستوى 1</option><option value="2">مستوى 2</option>
+            <option value="3">مستوى 3</option><option value="4">مستوى 4</option>
+        </select>
+        <textarea id="names-editor" style="height:250px;" placeholder="اكتب اسم واحد في كل سطر..."></textarea>
+        <button onclick="saveLevelNames()" style="background:#009688 !important;">حفظ التغييرات ✅</button>
+        <button onclick="location.href='/'" style="background:#888 !important; margin-top:10px;">رجوع</button>
+    </div>
+
+    <div id="mapping-page" style="display: none;">
+        <h2>🔗 إدارة الروابط (UID - اسم)</h2>
+        <div id="mapping-area" style="max-height: 350px; overflow-y: auto;"></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+            <button onclick="saveMappingChanges()" style="background:#2196F3 !important;">حفظ التعديلات</button>
+            <button onclick="if(confirm('تنبيه: سيتم مسح كل الروابط المخزنة! هل أنت متأكد؟')) location.href='/clearMapping'" style="background:#f44336 !important;">مسح الكل 🗑️</button>
+        </div>
+        <button onclick="location.href='/'" style="background:#888 !important; margin-top:10px;">رجوع</button>
+    </div>
+</div>
+
+<script>
+    function init() {
+        const path = window.location.pathname;
+        hideAll();
+        if (["/admin", "/mapping", "/students"].includes(path)) {
+            document.getElementById('login-page').style.display = 'block';
+        } else {
+            document.getElementById('reg-page').style.display = 'block';
+            startScannerCheck();
+        }
+    }
+
+    function hideAll() {
+        ['login-page','reg-page','admin-page','mapping-page','students-page'].forEach(id => {
+            if(document.getElementById(id)) document.getElementById(id).style.display = 'none';
+        });
+    }
+
+    function checkPassword() {
+        const p = document.getElementById('admin-pass').value;
+        const path = window.location.pathname;
+        if (path === "/admin" && p === "#67#") {
+            hideAll(); document.getElementById('admin-page').style.display = 'block'; loadAttendance();
+        } 
+        else if (path === "/mapping" && p === "159357") {
+            hideAll(); document.getElementById('mapping-page').style.display = 'block'; loadMapping();
+        } 
+        else if (path === "/students" && p === "1626") {
+            hideAll(); document.getElementById('students-page').style.display = 'block';
+        } 
+        else { alert("كلمة المرور غير صحيحة!"); }
+    }
+
+    // --- إدارة الطلاب ---
+    function loadLevelToEdit() {
+        let lvl = document.getElementById('edit-lvl-select').value;
+        if(!lvl) return;
+        fetch('/get-level-content?lvl=' + lvl + '&t=' + Date.now()).then(r => r.text()).then(data => {
+            document.getElementById('names-editor').value = data.trim();
+        });
+    }
+
+    function saveLevelNames() {
+        let lvl = document.getElementById('edit-lvl-select').value;
+        let content = document.getElementById('names-editor').value;
+        if(!lvl) return alert("اختر مستوى أولاً");
+        fetch('/save-level-content?lvl=' + lvl, { method: 'POST', body: content }).then(r => {
+            if(r.ok) alert("تم الحفظ ✅"); else alert("فشل الحفظ!");
+        });
+    }
+
+    // --- إدارة سجل الحضور ---
+    function loadAttendance() {
+        fetch('/get-attendance?t=' + Date.now()).then(r => r.text()).then(data => {
+            let attendanceLines = data.trim().split('\n').filter(l => l.length > 5);
+            let html = "<table><tr><th>الاسم</th><th>حذف</th></tr>";
+            attendanceLines.forEach((line, i) => {
+                let cols = line.split(',');
+                html += `<tr><td>${cols[0]}</td><td><button class="del-btn" onclick="deleteAttendanceRow(${i})">X</button></td></tr>`;
+            });
+            document.getElementById('table-area').innerHTML = html + "</table>";
+        });
+    }
+
+    function deleteAttendanceRow(index) {
+        if(confirm("حذف هذا السطر؟")) {
+            fetch('/get-attendance').then(r => r.text()).then(data => {
+                let lines = data.trim().split('\n').filter(l => l.length > 5);
+                lines.splice(index, 1);
+                fetch('/delete-attendance-row', { method: 'POST', body: lines.join('\n') + '\n' }).then(() => loadAttendance());
+            });
+        }
+    }
+
+    // --- إدارة الروابط (تحديث الحذف) ---
+    function loadMapping() {
+        fetch('/get-mapping-data?t=' + Date.now()).then(r => r.text()).then(data => {
+            let lines = data.trim().split('\n').filter(l => l.length > 5);
+            window.mappingLinesCount = lines.length;
+            let html = "<table><tr><th>UID</th><th>الاسم</th><th>X</th></tr>";
+            lines.forEach((line, i) => {
+                let p = line.split(',');
+                html += `<tr id="m-row-${i}">
+                    <td>${p[0]}</td>
+                    <td><input type="text" value="${p[1]}" id="m-n-${i}"></td>
+                    <input type="hidden" id="m-u-${i}" value="${p[0]}">
+                    <td><button class="del-btn" onclick="deleteSingleMapping(${i})">X</button></td>
+                </tr>`;
+            });
+            document.getElementById('mapping-area').innerHTML = html + "</table>";
+        });
+    }
+
+    function deleteSingleMapping(index) {
+        if(confirm("حذف رابط هذا الطالب؟")) {
+            document.getElementById(`m-row-${index}`).remove();
+            saveMappingChanges(true); // حفظ صامت بعد الحذف
+        }
+    }
+
+    function saveMappingChanges(silent = false) {
+        let newData = "";
+        for(let i=0; i < window.mappingLinesCount; i++){
+            let uEl = document.getElementById('m-u-'+i);
+            let nEl = document.getElementById('m-n-'+i);
+            if(uEl && nEl) {
+                newData += uEl.value + "," + nEl.value + "\n";
+            }
+        }
+        fetch('/update-mapping', { method: 'POST', body: newData }).then(() => {
+            if(!silent) alert("تم تحديث البيانات");
+            loadMapping();
+        });
+    }
+
+    // --- مسح الكارت والربط ---
+    function startScannerCheck() {
+        fetch('/get-uid?t=' + Date.now()).then(r => r.json()).then(d => {
+            if(d.uid) {
+                document.getElementById('uid-val').innerText = d.uid;
+                document.getElementById('setup-ui').style.display = "block";
+            }
+            if(window.location.pathname === "/") setTimeout(startScannerCheck, 1500);
+        });
+    }
+
+    function getNames() {
+        let level = document.getElementById('lvl').value;
+        fetch('/get-names?lvl=' + level).then(r => r.text()).then(data => document.getElementById('n-list').innerHTML = data);
+    }
+
+    function filterNames() {
+        let val = document.getElementById('srch').value.toLowerCase();
+        let options = document.getElementById('n-list').options;
+        for(let opt of options) opt.style.display = opt.text.toLowerCase().includes(val) ? "" : "none";
+    }
+
+    function saveBinding() {
+        let name = document.getElementById('n-list').value;
+        let uid = document.getElementById('uid-val').innerText;
+        if(!name) return alert("اختر الاسم");
+        fetch(`/save_mapping?uid=${uid}&student_name=${name}`, {method:'POST'}).then(() => { alert("تم الربط ✅"); location.reload(); });
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
